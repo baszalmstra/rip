@@ -6,12 +6,14 @@
 
 use crate::artifacts::wheel::InstallPaths;
 use crate::python_env::WheelTag;
+use crate::types::ParsePackageNameError;
 use crate::{types::NormalizedPackageName, types::PackageName, types::RFC822ish};
 use fs_err as fs;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use pep440_rs::Version;
 use serde::{Deserialize, Serialize};
+use std::fmt::{Display, Formatter};
 use std::{
     ffi::OsStr,
     path::{Path, PathBuf},
@@ -55,6 +57,45 @@ pub enum FindDistributionError {
     FailedToParseWheelTag(String),
 }
 
+<<<<<<< Updated upstream
+=======
+/// Locates the python distributions (packages) that have been installed in the specified directory.
+///
+/// When packages are installed in a venv they are installed in specific directories. Use the
+/// [`find_distributions_in_venv`] if you don't want to deal with determining the proper directory.
+///
+/// Any path in the results is relative to `dir`.
+pub fn find_distributions_in_directory(
+    dir: &Path,
+) -> Result<Vec<Distribution>, FindDistributionError> {
+    let mut result = Vec::new();
+    for entry in dir.read_dir()? {
+        let entry = entry?;
+        let path = entry.path();
+        let dist = if entry.file_type()?.is_dir() {
+            if let Some(dist) = analyze_dist_info(&path)? {
+                Some(dist)
+            } else if let Some(dist) = analyze_egg_info(&path)? {
+                Some(dist)
+            } else {
+                None
+            }
+        } else {
+            analyze_egg_info(&path)?
+        };
+
+        if let Some(dist) = dist {
+            result.push(Distribution {
+                dist_info: pathdiff::diff_paths(&dist.dist_info, dir).unwrap_or(dist.dist_info),
+                ..dist
+            })
+        }
+    }
+
+    Ok(result)
+}
+
+>>>>>>> Stashed changes
 /// Locates the python distributions (packages) that have been installed in the virtualenv rooted at
 /// `root`.
 pub fn find_distributions_in_venv(
@@ -89,10 +130,105 @@ pub fn find_distributions_in_venv(
     Ok(result)
 }
 
+#[derive(Debug, Error)]
+enum EggInfoNameParseError {
+    #[error("the name does not end in .egg-info")]
+    NotAnEggInfo,
+
+    #[error("missing project name")]
+    ProjectNameMissing,
+
+    #[error(transparent)]
+    InvalidPackageName(ParsePackageNameError),
+
+    #[error("{0}")]
+    InvalidVersion(String),
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct EggInfoName {
+    name: NormalizedPackageName,
+    version: Option<Version>,
+    python_version: Option<String>,
+    required_platform: Option<String>,
+}
+
+impl Display for EggInfoName {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)?;
+        if let Some(version) = &self.version {
+            write!(f, "-{version}")?;
+        };
+        if let Some(python_version) = &self.python_version {
+            write!(f, "-py{python_version}")?;
+        }
+        if let Some(required_platform) = &self.required_platform {
+            write!(f, "-{required_platform}")?;
+        }
+        write!(f, ".egg-info")
+    }
+}
+
+impl EggInfoName {
+    /// Constructs a new [`EggInfoName`] with just a name.
+    pub fn new(name: NormalizedPackageName) -> Self {
+        Self {
+            name,
+            version: None,
+            python_version: None,
+            required_platform: None,
+        }
+    }
+}
+
+impl FromStr for EggInfoName {
+    type Err = EggInfoNameParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let base_name = s
+            .strip_suffix(".egg-info")
+            .ok_or(EggInfoNameParseError::NotAnEggInfo)?;
+        let mut segment_iter = base_name.split('-');
+
+        let name = segment_iter
+            .next()
+            .ok_or(EggInfoNameParseError::ProjectNameMissing)
+            .and_then(|name| {
+                NormalizedPackageName::from_str(name)
+                    .map_err(EggInfoNameParseError::InvalidPackageName)
+            })?;
+
+        let version = segment_iter
+            .next()
+            .map(Version::from_str)
+            .transpose()
+            .map_err(EggInfoNameParseError::InvalidVersion)?;
+
+        let python_version = segment_iter
+            .next()
+            .map(|py| py.strip_prefix("py").unwrap_or(py))
+            .map(ToOwned::to_owned);
+
+        let required_platform = segment_iter.next().map(ToOwned::to_owned);
+
+        Ok(EggInfoName {
+            name,
+            version,
+            python_version,
+            required_platform,
+        })
+    }
+}
+
+/// Analuzes a `.egg-info` directory or file to see if it actually contains a python distribution
+/// (package).
+fn analyze_egg_info(egg_info_path: &Path) -> Result<Option<Distribution>, FindDistributionError> {
+    // let Some(())
+    Ok(None)
+}
+
 /// Analyzes a `.dist-info` directory to see if it actually contains a python distribution (package).
-fn analyze_distribution(
-    dist_info_path: PathBuf,
-) -> Result<Option<Distribution>, FindDistributionError> {
+fn analyze_dist_info(dist_info_path: &Path) -> Result<Option<Distribution>, FindDistributionError> {
     let Some((name, version)) = dist_info_path
         .file_name()
         .and_then(OsStr::to_str)
@@ -148,7 +284,7 @@ fn analyze_distribution(
     };
 
     Ok(Some(Distribution {
-        dist_info: dist_info_path,
+        dist_info: dist_info_path.to_owned(),
         name: name.into(),
         version,
         installer,
@@ -159,6 +295,16 @@ fn analyze_distribution(
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn parse_egg_info_name() {
+        assert_eq!(
+            EggInfoName::from_str("botorch-0.9.5-py3.12.egg-info")
+                .unwrap()
+                .to_string(),
+            String::from("botorch-0.9.5-py3.12.egg-info")
+        );
+    }
 
     #[test]
     fn test_find_distributions() {
