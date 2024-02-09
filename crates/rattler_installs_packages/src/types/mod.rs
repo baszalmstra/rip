@@ -17,6 +17,7 @@ mod entry_points;
 mod project_info;
 
 mod direct_url_json;
+mod egg_info;
 mod rfc822ish;
 
 pub use artifact::{ArtifactFromBytes, ArtifactFromSource, HasArtifactName, ReadPyProjectError};
@@ -44,3 +45,5 @@ pub(crate) use rfc822ish::RFC822ish;
 
 pub use pep440_rs::*;
 pub use pep508_rs::*;
+
+pub use egg_info::{EggExt, EggFilename, InvalidEggFilename};

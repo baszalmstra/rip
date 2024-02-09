@@ -1,0 +1,119 @@
+---
+source: crates/rattler_installs_packages/src/types/egg_info.rs
+expression: conversion
+---
+{
+    "simplejson-2.2.1-py3.9.egg-info": Ok(
+        EggFilename {
+            name: NormalizedPackageName(
+                "simplejson",
+            ),
+            version: Some(
+                Version {
+                    epoch: 0,
+                    release: [
+                        2,
+                        2,
+                        1,
+                    ],
+                    pre: None,
+                    post: None,
+                    dev: None,
+                    local: None,
+                },
+            ),
+            python_version: Some(
+                "3.9",
+            ),
+            required_platform: None,
+            extension: EggInfo,
+        },
+    ),
+    "pywin32-213-py2.6.egg": Ok(
+        EggFilename {
+            name: NormalizedPackageName(
+                "pywin32",
+            ),
+            version: Some(
+                Version {
+                    epoch: 0,
+                    release: [
+                        213,
+                    ],
+                    pre: None,
+                    post: None,
+                    dev: None,
+                    local: None,
+                },
+            ),
+            python_version: Some(
+                "2.6",
+            ),
+            required_platform: None,
+            extension: Egg,
+        },
+    ),
+    "simple.egg-info": Ok(
+        EggFilename {
+            name: NormalizedPackageName(
+                "simple",
+            ),
+            version: None,
+            python_version: None,
+            required_platform: None,
+            extension: EggInfo,
+        },
+    ),
+    "hunspell-0.3.3.egg-info": Ok(
+        EggFilename {
+            name: NormalizedPackageName(
+                "hunspell",
+            ),
+            version: Some(
+                Version {
+                    epoch: 0,
+                    release: [
+                        0,
+                        3,
+                        3,
+                    ],
+                    pre: None,
+                    post: None,
+                    dev: None,
+                    local: None,
+                },
+            ),
+            python_version: None,
+            required_platform: None,
+            extension: EggInfo,
+        },
+    ),
+    "pygobject-3.14.0-py2.7-linux-x86_64.egg-info": Ok(
+        EggFilename {
+            name: NormalizedPackageName(
+                "pygobject",
+            ),
+            version: Some(
+                Version {
+                    epoch: 0,
+                    release: [
+                        3,
+                        14,
+                        0,
+                    ],
+                    pre: None,
+                    post: None,
+                    dev: None,
+                    local: None,
+                },
+            ),
+            python_version: Some(
+                "2.7",
+            ),
+            required_platform: Some(
+                "linux",
+            ),
+            extension: EggInfo,
+        },
+    ),
+}

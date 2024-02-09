@@ -68,7 +68,7 @@ pub fn find_distributions_in_directory(
     for entry in search_dir.read_dir()? {
         let entry = entry?;
         if entry.file_type()?.is_dir() {
-            if let Some(dist) = analyze_distribution(entry.path())? {
+            if let Some(dist) = analyze_dist_info_distribution(entry.path())? {
                 result.push(Distribution {
                     dist_info: pathdiff::diff_paths(&dist.dist_info, search_dir)
                         .unwrap_or(dist.dist_info),
@@ -113,7 +113,7 @@ pub fn find_distributions_in_venv(
 }
 
 /// Analyzes a `.dist-info` directory to see if it actually contains a python distribution (package).
-fn analyze_distribution(
+fn analyze_dist_info_distribution(
     dist_info_path: PathBuf,
 ) -> Result<Option<Distribution>, FindDistributionError> {
     let Some((name, version)) = dist_info_path
