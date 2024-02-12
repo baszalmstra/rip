@@ -6,12 +6,13 @@
 
 use crate::artifacts::wheel::InstallPaths;
 use crate::python_env::WheelTag;
+use crate::types::EggFilename;
 use crate::{types::NormalizedPackageName, types::PackageName, types::RFC822ish};
 use fs_err as fs;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use pep440_rs::Version;
-use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::{
     ffi::OsStr,
     path::{Path, PathBuf},
@@ -19,24 +20,62 @@ use std::{
 };
 use thiserror::Error;
 
+/// Additional information about a `dist-info` distribution.
+#[derive(Debug, Clone)]
+#[cfg_attr(test, derive(serde::Serialize))]
+pub struct DistInfo {
+    /// Contents of the WHEEL file in the dist-info distribution.
+    pub wheel: RFC822ish,
+}
+
+impl DistInfo {
+    /// Reads the `Tag`s from the WHEEL file.
+    pub fn tags(&self) -> Result<IndexSet<WheelTag>, String> {
+        self.wheel
+            .fields
+            .get("tag")
+            .into_iter()
+            .flatten()
+            .map(|tag| WheelTag::from_compound_string(tag))
+            .flatten_ok()
+            .collect()
+    }
+}
+
+/// Information about an `egg-info` distribution
+#[derive(Debug, Clone)]
+#[cfg_attr(test, derive(serde::Serialize))]
+pub struct EggInfo {
+    /// Contents of the PKG-INFO file in the distribution.
+    pub pkg_info: RFC822ish,
+}
+
+/// The type of distribution
+#[derive(Debug, Clone)]
+#[cfg_attr(test, derive(serde::Serialize))]
+pub enum DistributionKind {
+    DistInfo(DistInfo),
+    EggInfo(EggInfo),
+}
+
 /// Information about a distribution found by `find_distributions_in_venv`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(test, derive(serde::Serialize))]
 pub struct Distribution {
     /// The name of the distribution
     pub name: NormalizedPackageName,
 
     /// The version of the distribution
-    pub version: Version,
+    pub version: Option<Version>,
 
     /// The installer that was responsible for installing the distribution
     pub installer: Option<String>,
 
-    /// The path to the .dist-info directory relative to the root of the environment.
+    /// The path to the .dist-info or .egg-info directory relative to the root of the environment.
     pub dist_info: PathBuf,
 
-    /// The specific tags of the distribution that was installed or `None` if this information
-    /// could not be retrieved.
-    pub tags: Option<IndexSet<WheelTag>>,
+    /// The type of distribution
+    pub kind: DistributionKind,
 }
 
 /// An error that can occur when running `find_distributions_in_venv`.
@@ -50,9 +89,17 @@ pub enum FindDistributionError {
     #[error("failed to parse '{0}'")]
     FailedToParseWheel(PathBuf, #[source] <RFC822ish as FromStr>::Err),
 
+    /// Failed to parse PKG-INFO file
+    #[error("failed to parse '{0}'")]
+    FailedToParsePkgInfo(PathBuf, #[source] <RFC822ish as FromStr>::Err),
+
     /// Failed to parse WHEEL tags
     #[error("failed to parse wheel tag {0}")]
     FailedToParseWheelTag(String),
+
+    /// Invalid distribution version
+    #[error("{0}")]
+    InvalidVersion(String),
 }
 
 /// Locates the python distributions (packages) that have been installed in the specified directory.
@@ -68,13 +115,20 @@ pub fn find_distributions_in_directory(
     for entry in search_dir.read_dir()? {
         let entry = entry?;
         if entry.file_type()?.is_dir() {
-            if let Some(dist) = analyze_dist_info_distribution(entry.path())? {
-                result.push(Distribution {
-                    dist_info: pathdiff::diff_paths(&dist.dist_info, search_dir)
-                        .unwrap_or(dist.dist_info),
-                    ..dist
-                })
-            }
+            let path = entry.path();
+            let dist = if let Some(dist) = analyze_dist_info_distribution(&path)? {
+                dist
+            } else if let Some(dist) = analyze_egg_info_distribution(&path)? {
+                dist
+            } else {
+                continue;
+            };
+
+            result.push(Distribution {
+                dist_info: pathdiff::diff_paths(&dist.dist_info, search_dir)
+                    .unwrap_or(dist.dist_info),
+                ..dist
+            });
         }
     }
 
@@ -112,9 +166,55 @@ pub fn find_distributions_in_venv(
     Ok(results)
 }
 
+/// Analyzes an `.egg-info` directory or file to see if it actually contains a python distribution.
+fn analyze_egg_info_distribution(
+    path: &Path,
+) -> Result<Option<Distribution>, FindDistributionError> {
+    let Some(file_name) = path
+        .file_name()
+        .and_then(OsStr::to_str)
+        .and_then(|n| EggFilename::from_str(n).ok())
+    else {
+        return Ok(None);
+    };
+
+    let pkg_info_path = if path.is_file() {
+        Cow::Borrowed(path)
+    } else {
+        let pkg_info_path = path.join("PKG-INFO");
+        if !pkg_info_path.is_file() {
+            return Ok(None);
+        }
+        Cow::Owned(pkg_info_path)
+    };
+
+    let pkg_info = RFC822ish::from_str(&fs::read_to_string(&pkg_info_path)?).map_err(move |e| {
+        FindDistributionError::FailedToParsePkgInfo(pkg_info_path.to_path_buf(), e)
+    })?;
+
+    let version = match file_name.version {
+        Some(version) => Some(version),
+        None => pkg_info
+            .fields
+            .get("version")
+            .as_deref()
+            .and_then(|f| f.first())
+            .map_or(Ok(None), |s| Version::from_str(s).map(Some))
+            .map_err(FindDistributionError::InvalidVersion)?,
+    };
+
+    Ok(Some(Distribution {
+        name: file_name.name,
+        version,
+        installer: None,
+        dist_info: path.to_path_buf(),
+        kind: DistributionKind::EggInfo(EggInfo { pkg_info }),
+    }))
+}
+
 /// Analyzes a `.dist-info` directory to see if it actually contains a python distribution (package).
 fn analyze_dist_info_distribution(
-    dist_info_path: PathBuf,
+    dist_info_path: &Path,
 ) -> Result<Option<Distribution>, FindDistributionError> {
     let Some((name, version)) = dist_info_path
         .file_name()
@@ -139,10 +239,7 @@ fn analyze_dist_info_distribution(
     };
 
     // Parse the version
-    let Ok(version) = Version::from_str(version) else {
-        // If the version cannot be parsed, just skip
-        return Ok(None);
-    };
+    let version = Version::from_str(version).map_err(FindDistributionError::InvalidVersion)?;
 
     // Try to read the INSTALLER file from the distribution directory
     let installer = fs::read_to_string(dist_info_path.join("INSTALLER"))
@@ -151,31 +248,19 @@ fn analyze_dist_info_distribution(
 
     // Check if there is a WHEEL file from where we can read tags
     let wheel_path = dist_info_path.join("WHEEL");
-    let tags = if wheel_path.is_file() {
-        let mut parsed = RFC822ish::from_str(&fs::read_to_string(&wheel_path)?)
-            .map_err(move |e| FindDistributionError::FailedToParseWheel(wheel_path, e))?;
-
-        Some(
-            parsed
-                .take_all("Tag")
-                .into_iter()
-                .map(|tag| {
-                    WheelTag::from_compound_string(&tag)
-                        .map_err(|_| FindDistributionError::FailedToParseWheelTag(tag))
-                })
-                .flatten_ok()
-                .collect::<Result<IndexSet<_>, _>>()?,
-        )
+    let wheel = if wheel_path.is_file() {
+        RFC822ish::from_str(&fs::read_to_string(&wheel_path)?)
+            .map_err(move |e| FindDistributionError::FailedToParseWheel(wheel_path, e))?
     } else {
-        None
+        return Ok(None);
     };
 
     Ok(Some(Distribution {
-        dist_info: dist_info_path,
+        dist_info: dist_info_path.to_path_buf(),
         name: name.into(),
-        version,
+        version: Some(version),
         installer,
-        tags,
+        kind: DistributionKind::DistInfo(DistInfo { wheel }),
     }))
 }
 

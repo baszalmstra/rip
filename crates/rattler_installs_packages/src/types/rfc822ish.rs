@@ -5,7 +5,8 @@ use std::str::FromStr;
 
 pub type Fields = HashMap<String, Vec<String>>;
 
-#[cfg_attr(test, derive(Debug, serde::Deserialize, PartialEq, Eq))]
+#[cfg_attr(test, derive(serde::Deserialize, serde::Serialize, PartialEq, Eq))]
+#[derive(Debug, Clone)]
 pub struct RFC822ish {
     pub fields: Fields,
     pub body: Option<String>,
