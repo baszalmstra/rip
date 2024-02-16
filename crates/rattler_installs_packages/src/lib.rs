@@ -20,5 +20,6 @@ pub mod wheel_builder;
 mod win;
 
 pub mod artifacts;
+mod cache;
 
 pub use utils::normalize_index_url;

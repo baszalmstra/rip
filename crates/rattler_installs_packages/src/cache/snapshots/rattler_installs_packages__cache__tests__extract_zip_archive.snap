@@ -1,0 +1,48 @@
+---
+source: crates/rattler_installs_packages/src/cache/mod.rs
+assertion_line: 267
+expression: archive
+---
+CachedArchive {
+    files: {
+        "miniblack-23.1.0.dist-info/WHEEL": ArchivedCachedArchiveEntryData {
+            content: "xxh3-lGquRkVLmtGgzaoenUocAA==",
+            mode: None,
+        },
+        "miniblack-23.1.0.dist-info/entry_points.txt": ArchivedCachedArchiveEntryData {
+            content: "xxh3-4G1bV34X4XHcwuIQ70B21g==",
+            mode: None,
+        },
+        "miniblack-23.1.0.dist-info/RECORD": ArchivedCachedArchiveEntryData {
+            content: "xxh3-KXKyM3apYXFgczaMI5gyAQ==",
+            mode: None,
+        },
+        "black/__init__.py": ArchivedCachedArchiveEntryData {
+            content: "xxh3-a4rMA0KOQk70uNm+Iz/qIQ==",
+            mode: None,
+        },
+        "miniblack-23.1.0.dist-info/licenses/LICENSE": ArchivedCachedArchiveEntryData {
+            content: "xxh3-NY89LjTT58/Ddlw6FXX4rA==",
+            mode: None,
+        },
+        "miniblack-23.1.0.dist-info/METADATA": ArchivedCachedArchiveEntryData {
+            content: "xxh3-hVeyC1dDTHsdbGdRlG5jKw==",
+            mode: None,
+        },
+        "miniblack-23.1.0.dist-info/licenses/AUTHORS.md": ArchivedCachedArchiveEntryData {
+            content: "xxh3-BAJevyfTvmjmE2m/e9nPmA==",
+            mode: None,
+        },
+        "blackd/__init__.py": ArchivedCachedArchiveEntryData {
+            content: "xxh3-6VwzacseiXlBKbANZEtcSA==",
+            mode: None,
+        },
+    },
+    directories: [
+        "black/",
+        "blackd/",
+        "miniblack-23.1.0.dist-info/",
+        "miniblack-23.1.0.dist-info/licenses/",
+    ],
+    links: {},
+}

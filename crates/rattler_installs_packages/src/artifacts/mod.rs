@@ -1,6 +1,7 @@
 //! Module containing artifacts that can be resolved and installed.
 mod sdist;
 
+mod extract;
 mod stree;
 /// Module for working with PyPA wheels. Contains the [`Wheel`] type, and related functionality.
 pub mod wheel;
