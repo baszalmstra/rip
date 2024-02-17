@@ -1,5 +1,7 @@
 //! This module contains code to interact with the cache.
 
+mod owned_archive;
+
 use cacache::{Algorithm, Integrity};
 use rkyv::{de::deserializers::SharedDeserializeMap, AlignedVec, Archive, Deserialize, Serialize};
 use std::{
@@ -11,104 +13,13 @@ use std::{
 };
 use thiserror::Error;
 
-#[derive(Debug, Error)]
-pub enum CachedArchiveError {
-    #[error("failed to read archive: {0}")]
-    ArchiveRead(String),
-
-    #[error("a generic IO error occurred")]
-    IoError(#[from] std::io::Error),
-}
-
-/// Describes an archive who's contents have been extracted to the cache.
-///
-/// You can think of this as a tar file that has been extracted but instead of it being extracted
-/// to the file system it's content has been extracted to a content-addressable store.
-///
-/// This type can be stored in the cache and later retrieved. Internally it uses a zero-copy buffer
-/// which makes this extremely fast to serialize and deserialize.
-pub struct CachedArchive {
-    bytes: AlignedVec,
-}
-
-impl Debug for CachedArchive {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CachedArchive")
-            .field("files", &self.files)
-            .field("directories", &self.directories)
-            .field("links", &self.links)
-            .finish()
-    }
-}
-
-impl PartialEq for CachedArchive {
-    fn eq(&self, other: &Self) -> bool {
-        self.deref() == other.deref()
-    }
-}
-
-impl CachedArchive {
-    /// Constructs a new instance from raw bytes.
-    ///
-    /// This will validate that the bytes are a valid archive.
-    pub fn new(bytes: AlignedVec) -> Result<CachedArchive, CachedArchiveError> {
-        let _ = rkyv::validation::validators::check_archived_root::<CachedArchiveData>(&bytes)
-            .map_err(|e| CachedArchiveError::ArchiveRead(e.to_string()))?;
-        Ok(Self { bytes })
-    }
-
-    /// Constructs a new instance by reading it from a reader.
-    pub fn from_reader<R: Read>(mut rdr: R) -> Result<Self, CachedArchiveError> {
-        let mut buf = AlignedVec::with_capacity(1024);
-        buf.extend_from_reader(&mut rdr)?;
-        Self::new(buf)
-    }
-
-    /// Write the underlying bytes of this archived value to the given writer.
-    pub fn write<W: std::io::Write>(this: &Self, mut wtr: W) -> Result<(), std::io::Error> {
-        wtr.write_all(&this.bytes)
-    }
-
-    /// Returns this instance as a byte representation which can be used to store the data in the
-    /// cache.
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.bytes
-    }
-
-    /// Constructs a new instance from a [`CachedArchiveData`]
-    pub fn from_unarchived(unarchived: &CachedArchiveData) -> Self {
-        let bytes =
-            rkyv::to_bytes::<_, 4096>(unarchived).expect("valid archive must serialize correctly");
-        Self { bytes }
-    }
-
-    /// Deserializes this instance into [`CachedArchiveData`]. Note that this will require extract
-    /// memory allocations.
-    pub fn deserialize(this: &Self) -> CachedArchiveData {
-        (**this)
-            .deserialize(&mut SharedDeserializeMap::new())
-            .expect("valid archive must deserialize correctly")
-    }
-}
-
-impl Deref for CachedArchive {
-    type Target = <CachedArchiveData as rkyv::Archive>::Archived;
-
-    fn deref(&self) -> &Self::Target {
-        /// This is safe because we know that the bytes are a valid archive.
-        unsafe {
-            rkyv::archived_root::<CachedArchiveData>(&self.bytes)
-        }
-    }
-}
-
 /// Internal representation of a cached archive.
 #[derive(Debug, Archive, Serialize, Deserialize, Eq, PartialEq)]
 #[archive(check_bytes)]
 #[archive_attr(derive(Debug, Eq, PartialEq))]
-pub struct CachedArchiveData {
+pub struct CachedArchive {
     /// All the files stored in the archive.
-    pub files: HashMap<String, CachedArchiveEntryData>,
+    pub files: HashMap<String, CachedArchiveEntry>,
 
     /// Links stored in the archive.
     pub links: HashMap<String, String>,
@@ -120,7 +31,7 @@ pub struct CachedArchiveData {
 #[derive(Debug, Archive, Serialize, Deserialize, Eq, PartialEq)]
 #[archive(check_bytes)]
 #[archive_attr(derive(Debug, Eq, PartialEq))]
-pub struct CachedArchiveEntryData {
+pub struct CachedArchiveEntry {
     /// The content hash of the entry
     pub content: String,
 
@@ -147,20 +58,29 @@ pub enum ExtractZipArchiveError {
     IoError(String, #[source] std::io::Error),
 }
 
-/// Extracts the contents of a zip-archive to the cache returning a [`CachedArchiveData`].
+/// Extracts the contents of a zip-archive to the cache returning a [`CachedArchive`].
 ///
 /// The `archive_bytes` reader will be completely consumed by this function.
 ///
-/// The [`CachedArchiveData`] will contain the details about all the files in the archive and how they
-/// are stored in the cache.
+/// The [`CachedArchive`] will contain the details about all the files in the archive and how
+/// they are stored in the cache.
 ///
 /// All files in the cache will be deduplicated. Calling this function twice will yield the exact
-/// same [`CachedArchiveData`].
+/// same [`CachedArchive`].
+///
+/// Optionally, an `algorithm` can be provided. By default, this function will use
+/// [`Algorithm::Xxh3`]  because it is by far the fastest. However, you are going to compute
+/// different hashes anyway it might make sense to pass a different value here.
+///
+/// Note that the choice of algorithm affects deduplication. Only content with the same hash is
+/// deduplicated this means that using another hash algorithm for the same content will result in
+/// cache duplication.
 pub fn extract_zip_archive(
     cache: &Path,
     archive_bytes: impl Read,
+    algorithm: Option<Algorithm>,
 ) -> Result<CachedArchive, ExtractZipArchiveError> {
-    let mut archive = CachedArchiveData {
+    let mut archive = CachedArchive {
         files: HashMap::new(),
         links: HashMap::new(),
         directories: Vec::new(),
@@ -195,7 +115,8 @@ pub fn extract_zip_archive(
         if entry.is_dir() {
             archive.directories.push(path.to_string());
         } else if entry.is_file() {
-            let writer_ops = cacache::WriteOpts::new().algorithm(Algorithm::Xxh3);
+            let writer_ops =
+                cacache::WriteOpts::new().algorithm(algorithm.unwrap_or(Algorithm::Xxh3));
 
             // Specify the last modified time if available
             let writer_ops = if let Ok(time) = entry.last_modified().to_time() {
@@ -223,7 +144,7 @@ pub fn extract_zip_archive(
             // Write the entry to the archive
             archive.files.insert(
                 path.to_string(),
-                CachedArchiveEntryData {
+                CachedArchiveEntry {
                     content: integrity.to_string(),
                     mode: entry.unix_mode(),
                 },
@@ -231,8 +152,7 @@ pub fn extract_zip_archive(
         }
     }
 
-    dbg!("one");
-    Ok(CachedArchive::from_unarchived(&archive))
+    Ok(archive)
 }
 
 #[cfg(test)]
@@ -254,11 +174,11 @@ mod tests {
         let mut wheel = std::fs::File::open(&wheel_path).unwrap();
 
         // Extract the archive to the cache
-        let archive = extract_zip_archive(cache.path(), &mut wheel).unwrap();
+        let archive = extract_zip_archive(cache.path(), &mut wheel, None).unwrap();
 
         // Rewind the file and try again.
         wheel.rewind().unwrap();
-        let archive2 = extract_zip_archive(cache.path(), &mut wheel).unwrap();
+        let archive2 = extract_zip_archive(cache.path(), &mut wheel, None).unwrap();
 
         // The two archives should be the same
         assert_eq!(&archive, &archive2);
