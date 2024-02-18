@@ -6,8 +6,6 @@ use crate::{
     },
     utils::ReadAndSeek,
 };
-use async_http_range_reader::AsyncHttpRangeReader;
-use async_zip::base::read::seek::ZipFileReader;
 use fs_err as fs;
 use miette::IntoDiagnostic;
 use parking_lot::Mutex;
@@ -20,7 +18,6 @@ use std::{
     str::FromStr,
 };
 use thiserror::Error;
-use tokio_util::compat::TokioAsyncReadCompatExt;
 use zip::{result::ZipError, ZipArchive};
 
 /// Different representations of a wheel that is stored locally on disk.
@@ -107,94 +104,15 @@ impl ArchivedWheel {
         Self::from_bytes(wheel_filename.clone(), Box::new(bytes))
     }
 
-    async fn get_lazy_vitals(
-        name: &WheelFilename,
-        stream: &mut AsyncHttpRangeReader,
-    ) -> Result<(Vec<u8>, WheelCoreMetadata), WheelVitalsError> {
-        // Make sure we have the back part of the stream.
-        // Best guess for the central directory size inside the zip
-        const CENTRAL_DIRECTORY_SIZE: u64 = 16384;
-        // Because the zip index is at the back
-        stream
-            .prefetch(stream.len().saturating_sub(CENTRAL_DIRECTORY_SIZE)..stream.len())
-            .await;
-
-        // Construct a zip reader to uses the stream.
-        let mut reader = ZipFileReader::new(stream.compat())
-            .await
-            .map_err(|err| WheelVitalsError::from_async_zip("/".into(), err))?;
-
-        // Collect all top-level filenames
-        let file_names = reader
-            .file()
-            .entries()
-            .iter()
-            .filter_map(|e| e.filename().as_str().ok());
-
-        // Determine the name of the dist-info directory
-        let dist_info_prefix = find_dist_info(&name, file_names)?.to_owned();
-
-        let metadata_path = format!("{dist_info_prefix}.dist-info/METADATA");
-        let (metadata_idx, metadata_entry) = reader
-            .file()
-            .entries()
-            .iter()
-            .enumerate()
-            .find(|(_, p)| p.filename().as_str().ok() == Some(metadata_path.as_str()))
-            .ok_or(WheelVitalsError::MetadataMissing)?;
-
-        // Get the size of the entry plus the header + size of the filename. We should also actually
-        // include bytes for the extra fields but we don't have that information.
-        let offset = metadata_entry.header_offset();
-        let size = metadata_entry.compressed_size()
-            + 30 // Header size in bytes
-            + metadata_entry.filename().as_bytes().len() as u64;
-
-        // The zip archive uses as BufReader which reads in chunks of 8192. To ensure we prefetch
-        // enough data we round the size up to the nearest multiple of the buffer size.
-        let buffer_size = 8192;
-        let size = ((size + buffer_size - 1) / buffer_size) * buffer_size;
-
-        // Fetch the bytes from the zip archive that contain the requested file.
-        reader
-            .inner_mut()
-            .get_mut()
-            .prefetch(offset..offset + size)
-            .await;
-
-        // Read the contents of the metadata.json file
-        let mut contents = Vec::new();
-        reader
-            .reader_with_entry(metadata_idx)
-            .await
-            .map_err(|e| WheelVitalsError::from_async_zip(metadata_path.clone(), e))?
-            .read_to_end_checked(&mut contents)
-            .await
-            .map_err(|e| WheelVitalsError::from_async_zip(metadata_path, e))?;
-
-        // Parse the wheel data
-        let metadata = WheelCoreMetadata::try_from(contents.as_slice())?;
-
-        let stream = reader.into_inner().into_inner();
-        let ranges = stream.requested_ranges().await;
-        let total_bytes_fetched: u64 = ranges.iter().map(|r| r.end - r.start).sum();
-        tracing::debug!(
-            "fetched {} ranges, total of {} bytes, total file length {} ({}%)",
-            ranges.len(),
-            total_bytes_fetched,
-            stream.len(),
-            (total_bytes_fetched as f64 / stream.len() as f64 * 100000.0).round() / 100.0
-        );
-
-        Ok((contents, metadata))
-    }
-
     /// Get the metadata from the wheel archive
     pub fn metadata(&self) -> Result<(Vec<u8>, WheelCoreMetadata), WheelVitalsError> {
         let mut archive = self.archive.lock();
 
         // Determine the name of the dist-info directory
-        let dist_info_prefix = find_dist_info(&self.name, archive.file_names())?.to_owned();
+        let dist_info_prefix =
+            find_dist_info(&self.name, archive.file_names().map(|name| ((), name)))?
+                .1
+                .to_owned();
 
         // Read the METADATA file
         let metadata_path = format!("{dist_info_prefix}.dist-info/METADATA");
@@ -208,25 +126,17 @@ impl ArchivedWheel {
                 metadata.name.as_source_str(),
                 self.name.distribution.as_source_str()
             ))
-            .into());
+                .into());
         }
         if metadata.version != self.name.version {
             return Err(WheelCoreMetaDataError::FailedToParse(format!(
                 "version mismatch between {dist_info_prefix}.dist-info/METADATA and filename ({} != {})",
                 metadata.version, self.name.version
             ))
-            .into());
+                .into());
         }
 
         Ok((metadata_blob, metadata))
-    }
-
-    /// Read metadata from bytes-stream
-    pub async fn read_metadata_bytes(
-        name: &WheelFilename,
-        stream: &mut AsyncHttpRangeReader,
-    ) -> miette::Result<(Vec<u8>, WheelCoreMetadata)> {
-        Self::get_lazy_vitals(name, stream).await.into_diagnostic()
     }
 }
 
@@ -307,11 +217,11 @@ fn read_entry_to_end<R: ReadAndSeek>(
 }
 
 /// Locates the `.dist-info` directory in a list of files.
-pub(crate) fn find_dist_info<'a>(
+pub(crate) fn find_dist_info<'a, T>(
     wheel_name: &WheelFilename,
-    files: impl IntoIterator<Item = &'a str>,
-) -> Result<&'a str, WheelVitalsError> {
-    let mut dist_infos = files.into_iter().filter_map(|path| {
+    files: impl IntoIterator<Item = (T, &'a str)>,
+) -> Result<(T, &'a str), WheelVitalsError> {
+    let mut dist_infos = files.into_iter().filter_map(|(t, path)| {
         let (dir_name, rest) = path.split_once(['/', '\\'])?;
         let dir_stem = dir_name.strip_suffix(".dist-info")?;
         let (name, version) = dir_stem.rsplit_once('-')?;
@@ -319,7 +229,7 @@ pub(crate) fn find_dist_info<'a>(
             && Version::from_str(version).ok()? == wheel_name.version
             && rest == "METADATA"
         {
-            Some(dir_stem)
+            Some((t, dir_stem))
         } else {
             None
         }

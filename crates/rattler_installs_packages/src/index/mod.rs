@@ -8,6 +8,7 @@ pub mod html;
 mod http;
 mod package_database;
 mod package_sources;
+mod lazy_metadata;
 
 pub use package_database::{ArtifactRequest, PackageDb};
 pub use package_sources::{PackageSources, PackageSourcesBuilder};

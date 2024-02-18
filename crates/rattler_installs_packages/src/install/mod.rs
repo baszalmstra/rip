@@ -135,7 +135,10 @@ impl ArchivedWheel {
         let mut archive = self.archive.lock();
 
         // Locate the dist-info folder
-        let dist_info_prefix = find_dist_info(self.name(), archive.file_names())?.to_owned();
+        let dist_info_prefix =
+            find_dist_info(self.name(), archive.file_names().map(|name| ((), name)))?
+                .1
+                .to_owned();
 
         // Read the WHEEL from the archive.
         let wheel_path = format!("{dist_info_prefix}.dist-info/WHEEL");
@@ -182,7 +185,8 @@ impl ArchivedWheel {
         let record_relative_path = Path::new(&record_filename);
 
         // Read `entry_points.txt` and parse any scripts we need to create.
-        let scripts = Scripts::from_wheel(&mut archive, &dist_info_prefix, options.extras.as_ref())?;
+        let scripts =
+            Scripts::from_wheel(&mut archive, &dist_info_prefix, options.extras.as_ref())?;
 
         let mut resulting_records = Vec::new();
         let (pyc_tx, pyc_rx) = channel();
