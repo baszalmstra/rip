@@ -2,42 +2,49 @@
 source: crates/rattler_installs_packages/src/cache/mod.rs
 expression: archive
 ---
-CachedArchive {
+CachedWheel {
     files: {
-        "miniblack-23.1.0.dist-info/METADATA": CachedArchiveEntry {
-            content: "xxh3-hVeyC1dDTHsdbGdRlG5jKw==",
-            mode: None,
-        },
-        "black/__init__.py": CachedArchiveEntry {
+        "black/__init__.py": CachedWheelEntry {
             content: "xxh3-a4rMA0KOQk70uNm+Iz/qIQ==",
+            sha256: "sha256=VWazgq80l38r1Cn5Ea7fH5bMuDdFuQJtYgBKGWJganI",
             mode: None,
         },
-        "miniblack-23.1.0.dist-info/entry_points.txt": CachedArchiveEntry {
-            content: "xxh3-4G1bV34X4XHcwuIQ70B21g==",
-            mode: None,
-        },
-        "miniblack-23.1.0.dist-info/WHEEL": CachedArchiveEntry {
-            content: "xxh3-lGquRkVLmtGgzaoenUocAA==",
-            mode: None,
-        },
-        "miniblack-23.1.0.dist-info/RECORD": CachedArchiveEntry {
-            content: "xxh3-KXKyM3apYXFgczaMI5gyAQ==",
-            mode: None,
-        },
-        "miniblack-23.1.0.dist-info/licenses/LICENSE": CachedArchiveEntry {
-            content: "xxh3-NY89LjTT58/Ddlw6FXX4rA==",
-            mode: None,
-        },
-        "blackd/__init__.py": CachedArchiveEntry {
+        "blackd/__init__.py": CachedWheelEntry {
             content: "xxh3-6VwzacseiXlBKbANZEtcSA==",
+            sha256: "sha256=cTJotjnER9YB0rDWo3hOWSg4v0mNAx5DFmCJdyB1s5k",
             mode: None,
         },
-        "miniblack-23.1.0.dist-info/licenses/AUTHORS.md": CachedArchiveEntry {
+        "miniblack-23.1.0.dist-info/METADATA": CachedWheelEntry {
+            content: "xxh3-hVeyC1dDTHsdbGdRlG5jKw==",
+            sha256: "sha256=galtIfXUJ5UEq_3ERFi03BdCo6KHkz2r6jc0EYPsEPY",
+            mode: None,
+        },
+        "miniblack-23.1.0.dist-info/RECORD": CachedWheelEntry {
+            content: "xxh3-KXKyM3apYXFgczaMI5gyAQ==",
+            sha256: "sha256=yqKgSP84x7TE_xDvDXM72OV2XK1nmsTEmtnd5evX_40",
+            mode: None,
+        },
+        "miniblack-23.1.0.dist-info/WHEEL": CachedWheelEntry {
+            content: "xxh3-lGquRkVLmtGgzaoenUocAA==",
+            sha256: "sha256=rE4t8wm7r0N5wTLLeSbOvJha-KwM1ALPuB-FmvNahDo",
+            mode: None,
+        },
+        "miniblack-23.1.0.dist-info/entry_points.txt": CachedWheelEntry {
+            content: "xxh3-4G1bV34X4XHcwuIQ70B21g==",
+            sha256: "sha256=qBIyywHwGRkJj7kieq86kqf77rz3qGC4Joj36lHnxwc",
+            mode: None,
+        },
+        "miniblack-23.1.0.dist-info/licenses/AUTHORS.md": CachedWheelEntry {
             content: "xxh3-BAJevyfTvmjmE2m/e9nPmA==",
+            sha256: "sha256=cpHlH2nYyIXWEnA0LccoGenN-g5HZ7341klZ7MwbdIU",
+            mode: None,
+        },
+        "miniblack-23.1.0.dist-info/licenses/LICENSE": CachedWheelEntry {
+            content: "xxh3-NY89LjTT58/Ddlw6FXX4rA==",
+            sha256: "sha256=nAQo8MO0d5hQz1vZbhGqqK_HLUqG1KNiI9erouWNbgA",
             mode: None,
         },
     },
-    links: {},
     directories: [
         "black/",
         "blackd/",

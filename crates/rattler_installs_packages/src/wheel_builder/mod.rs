@@ -21,7 +21,7 @@ use crate::types::ArtifactFromSource;
 use crate::types::{NormalizedPackageName, PackageName, SourceArtifactName, WheelFilename};
 use crate::wheel_builder::build_environment::BuildEnvironment;
 pub use crate::wheel_builder::wheel_cache::{WheelCache, WheelCacheKey};
-use crate::{artifacts::Wheel, index::PackageDb, python_env::WheelTags, types::WheelCoreMetadata};
+use crate::{artifacts::ArchivedWheel, index::PackageDb, python_env::WheelTags, types::WheelCoreMetadata};
 pub use error::WheelBuildError;
 use tokio::sync::broadcast;
 
@@ -303,7 +303,7 @@ impl WheelBuilder {
     pub async fn build_wheel<S: ArtifactFromSource>(
         &self,
         sdist: &S,
-    ) -> Result<Wheel, WheelBuildError> {
+    ) -> Result<ArchivedWheel, WheelBuildError> {
         // Check if we have already built this wheel locally and use that instead
         let key = WheelCacheKey::from_sdist(sdist, &self.python_version)?;
         if let Some(wheel) = self.package_db.local_wheel_cache().wheel_for_key(&key)? {
@@ -323,7 +323,7 @@ impl WheelBuilder {
         &self,
         build_environment: &BuildEnvironment,
         sdist: &S,
-    ) -> Result<Wheel, WheelBuildError> {
+    ) -> Result<ArchivedWheel, WheelBuildError> {
         let output_dir = tempfile::tempdir()?;
         // Run the wheel stage
         let output = build_environment.run_command("Wheel", output_dir.path())?;
@@ -367,7 +367,7 @@ impl WheelBuilder {
         )?;
 
         // Reconstruct wheel from the path
-        let wheel = Wheel::from_path(&wheel_file, &package_name)
+        let wheel = ArchivedWheel::from_path(&wheel_file, &package_name)
             .map_err(|e| WheelBuildError::Error(format!("Could not build wheel: {}", e)))?;
 
         Ok(wheel)

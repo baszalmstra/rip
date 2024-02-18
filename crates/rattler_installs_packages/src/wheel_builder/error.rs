@@ -1,9 +1,9 @@
-use crate::artifacts::wheel::UnpackError;
 use crate::python_env::VEnvError;
 use crate::types::{ParseArtifactNameError, WheelCoreMetaDataError};
 use crate::wheel_builder::wheel_cache;
 use pep508_rs::Requirement;
 use std::path::PathBuf;
+use crate::install::UnpackError;
 
 /// An error that can occur while building a wheel
 #[allow(missing_docs)]

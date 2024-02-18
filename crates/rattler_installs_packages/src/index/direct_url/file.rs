@@ -1,4 +1,4 @@
-use crate::artifacts::{SDist, STree, Wheel};
+use crate::artifacts::{ArchivedWheel, SDist, STree};
 use crate::index::package_database::DirectUrlArtifactResponse;
 use crate::resolve::PypiVersion;
 use crate::types::{
@@ -129,11 +129,11 @@ pub(crate) async fn get_artifacts_and_metadata<P: Into<NormalizedPackageName>>(
     let normalized_package_name = p.into();
 
     let (metadata_bytes, metadata, artifact) = if path.is_file() && str_name.ends_with(".whl") {
-        let wheel = Wheel::from_path(&path, &normalized_package_name)
+        let wheel = ArchivedWheel::from_path(&path, &normalized_package_name)
             .map_err(|e| WheelBuildError::Error(format!("Could not build wheel: {}", e)))
             .into_diagnostic()?;
 
-        let (data_bytes, metadata) = wheel.metadata()?;
+        let (data_bytes, metadata) = wheel.metadata().into_diagnostic()?;
         (data_bytes, metadata, ArtifactType::Wheel(wheel))
     } else if path.is_file() {
         let (wheel_metadata, sdist) =

@@ -11,6 +11,8 @@ pub mod types;
 pub mod python_env;
 
 pub mod index;
+
+pub mod install;
 mod utils;
 
 pub mod resolve;

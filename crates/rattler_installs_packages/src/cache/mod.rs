@@ -2,27 +2,22 @@
 
 mod owned_archive;
 
-use cacache::{Algorithm, Integrity};
-use rkyv::{de::deserializers::SharedDeserializeMap, AlignedVec, Archive, Deserialize, Serialize};
-use std::{
-    collections::HashMap,
-    fmt::{Debug, Formatter},
-    io::Read,
-    ops::Deref,
-    path::Path,
-};
+use cacache::Algorithm;
+use data_encoding::BASE64URL_NOPAD;
+use rattler_digest::Sha256;
+use rkyv::{Archive, Deserialize, Serialize};
+use std::{collections::BTreeMap, fmt::Debug, path::Path};
 use thiserror::Error;
 
-/// Internal representation of a cached archive.
+/// Information about a cached wheel.
 #[derive(Debug, Archive, Serialize, Deserialize, Eq, PartialEq)]
 #[archive(check_bytes)]
 #[archive_attr(derive(Debug, Eq, PartialEq))]
-pub struct CachedArchive {
+pub struct CachedWheel {
     /// All the files stored in the archive.
-    pub files: HashMap<String, CachedArchiveEntry>,
-
-    /// Links stored in the archive.
-    pub links: HashMap<String, String>,
+    /// The order must be deterministic to guarentee the same content hash.
+    /// TODO: I couldnt use IndexMap here because rkyv only supports indexmap v1.
+    pub files: BTreeMap<String, CachedWheelEntry>,
 
     /// All the directories stored in the archive.
     pub directories: Vec<String>,
@@ -31,16 +26,23 @@ pub struct CachedArchive {
 #[derive(Debug, Archive, Serialize, Deserialize, Eq, PartialEq)]
 #[archive(check_bytes)]
 #[archive_attr(derive(Debug, Eq, PartialEq))]
-pub struct CachedArchiveEntry {
-    /// The content hash of the entry
+pub struct CachedWheelEntry {
+    /// The content hash of the entry. This can be used to look up the entry in
+    /// the cache.
     pub content: String,
+
+    /// The SHA256 hash of the entry. This is used to compare against the
+    /// RECORD file stored in the wheel. The string is in the same format as
+    /// in the RECORD file e.g.:
+    /// `"sha256=xxxx"`
+    pub sha256: String,
 
     /// File permissions
     pub mode: Option<u32>,
 }
 
 #[derive(Debug, Error)]
-pub enum ExtractZipArchiveError {
+pub enum ExtractWheelError {
     /// An error occurred while reading the zip file
     #[error(transparent)]
     Zip(#[from] zip::result::ZipError),
@@ -58,42 +60,39 @@ pub enum ExtractZipArchiveError {
     IoError(String, #[source] std::io::Error),
 }
 
-/// Extracts the contents of a zip-archive to the cache returning a [`CachedArchive`].
+/// Extracts the contents of a wheel to the cache returning a [`CachedWheel`]. A
+/// wheel is simply a zip archive.
 ///
 /// The `archive_bytes` reader will be completely consumed by this function.
 ///
-/// The [`CachedArchive`] will contain the details about all the files in the archive and how
+/// The [`CachedWheel`] will contain the details about all the files in the archive and how
 /// they are stored in the cache.
 ///
 /// All files in the cache will be deduplicated. Calling this function twice will yield the exact
-/// same [`CachedArchive`].
+/// same [`CachedWheel`].
 ///
-/// Optionally, an `algorithm` can be provided. By default, this function will use
-/// [`Algorithm::Xxh3`]  because it is by far the fastest. However, you are going to compute
-/// different hashes anyway it might make sense to pass a different value here.
-///
-/// Note that the choice of algorithm affects deduplication. Only content with the same hash is
-/// deduplicated this means that using another hash algorithm for the same content will result in
-/// cache duplication.
-pub fn extract_zip_archive(
+/// This function always uses the Xhh3 hashing algorithm to store files in the cache. The reason is
+/// to enable more deduplication by using the best hash possible to cache the artifacts. Xhh3 is
+/// extremely fast, much faster than sha256, which makes it the logical choice to use to store the
+/// data in the cache. However, we also compute the sha256 hash of each file to make sure we can
+/// compare it to the RECORD file stored in the wheel.
+pub fn extract<R: std::io::Read>(
     cache: &Path,
-    archive_bytes: impl Read,
-    algorithm: Option<Algorithm>,
-) -> Result<CachedArchive, ExtractZipArchiveError> {
-    let mut archive = CachedArchive {
-        files: HashMap::new(),
-        links: HashMap::new(),
+    byte_stream: R,
+) -> Result<CachedWheel, ExtractWheelError> {
+    let mut archive = CachedWheel {
+        files: BTreeMap::new(),
         directories: Vec::new(),
     };
 
     // Iterate over all the files in the zip and extract them to the cache
-    let mut archive_bytes = archive_bytes;
-    while let Some(mut entry) = zip::read::read_zipfile_from_stream(&mut archive_bytes)
-        .map_err(ExtractZipArchiveError::Zip)?
+    let mut archive_bytes = byte_stream;
+    while let Some(mut entry) =
+        zip::read::read_zipfile_from_stream(&mut archive_bytes).map_err(ExtractWheelError::Zip)?
     {
         // Get the path of the entry
         let Some(path) = entry.enclosed_name() else {
-            return Err(ExtractZipArchiveError::InvalidEntry(
+            return Err(ExtractWheelError::InvalidEntry(
                 entry.name().to_string(),
                 String::from("is not a valid path"),
             )
@@ -105,7 +104,7 @@ pub fn extract_zip_archive(
             .as_os_str()
             .to_str()
             .ok_or_else(|| {
-                ExtractZipArchiveError::InvalidEntry(
+                ExtractWheelError::InvalidEntry(
                     entry.name().to_string(),
                     String::from("is not a valid utf-8 path"),
                 )
@@ -115,8 +114,7 @@ pub fn extract_zip_archive(
         if entry.is_dir() {
             archive.directories.push(path.to_string());
         } else if entry.is_file() {
-            let writer_ops =
-                cacache::WriteOpts::new().algorithm(algorithm.unwrap_or(Algorithm::Xxh3));
+            let writer_ops = cacache::WriteOpts::new().algorithm(Algorithm::Xxh3);
 
             // Specify the last modified time if available
             let writer_ops = if let Ok(time) = entry.last_modified().to_time() {
@@ -128,25 +126,32 @@ pub fn extract_zip_archive(
             };
 
             // Open the writer from the options
-            let mut writer = writer_ops
+            let writer = writer_ops
                 .open_hash_sync(cache)
-                .map_err(|err| ExtractZipArchiveError::CacheError(path.to_string(), err))?;
+                .map_err(|err| ExtractWheelError::CacheError(path.to_string(), err))?;
+
+            // While extracting compute the sha256 hash at the same time.
+            let mut writer = rattler_digest::HashingWriter::<_, Sha256>::new(writer);
 
             // Copy the file to the cache
             std::io::copy(&mut entry, &mut writer)
-                .map_err(|err| ExtractZipArchiveError::IoError(path.to_string(), err))?;
+                .map_err(|err| ExtractWheelError::IoError(path.to_string(), err))?;
+
+            // Finish the SHA256 computation
+            let (writer, sha256) = writer.finalize();
 
             // Finish writing to the cache and get the integrity
             let integrity = writer
                 .commit()
-                .map_err(|err| ExtractZipArchiveError::CacheError(path.to_string(), err))?;
+                .map_err(|err| ExtractWheelError::CacheError(path.to_string(), err))?;
 
             // Write the entry to the archive
             archive.files.insert(
                 path.to_string(),
-                CachedArchiveEntry {
+                CachedWheelEntry {
                     content: integrity.to_string(),
                     mode: entry.unix_mode(),
+                    sha256: format!("sha256={}", BASE64URL_NOPAD.encode(&sha256)),
                 },
             );
         }
@@ -158,7 +163,6 @@ pub fn extract_zip_archive(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rkyv::Archived;
     use std::io::Seek;
 
     #[test]
@@ -174,11 +178,11 @@ mod tests {
         let mut wheel = std::fs::File::open(&wheel_path).unwrap();
 
         // Extract the archive to the cache
-        let archive = extract_zip_archive(cache.path(), &mut wheel, None).unwrap();
+        let archive = extract(cache.path(), &mut wheel).unwrap();
 
         // Rewind the file and try again.
         wheel.rewind().unwrap();
-        let archive2 = extract_zip_archive(cache.path(), &mut wheel, None).unwrap();
+        let archive2 = extract(cache.path(), &mut wheel).unwrap();
 
         // The two archives should be the same
         assert_eq!(&archive, &archive2);

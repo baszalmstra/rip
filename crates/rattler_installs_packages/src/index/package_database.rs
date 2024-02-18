@@ -1,4 +1,4 @@
-use crate::artifacts::{SDist, STree, Wheel};
+use crate::artifacts::{ArchivedWheel, SDist, STree};
 use crate::index::file_store::FileStore;
 
 use crate::index::html::{parse_package_names_html, parse_project_info_html};
@@ -117,7 +117,7 @@ impl PackageDb {
     }
 
     /// Downloads and caches information about available artifacts of a package from the index.
-    pub async fn available_artifacts<'wb>(
+    pub async fn available_artifacts(
         &self,
         request: ArtifactRequest,
     ) -> miette::Result<&IndexMap<PypiVersion, Vec<Arc<ArtifactInfo>>>> {
@@ -240,7 +240,7 @@ impl PackageDb {
         &self,
         artifact_info: &ArtifactInfo,
         builder: Option<&'async_recursion WheelBuilder>,
-    ) -> miette::Result<(Wheel, Option<DirectUrlJson>)> {
+    ) -> miette::Result<(ArchivedWheel, Option<DirectUrlJson>)> {
         // TODO: add support for this currently there are not saved
         if artifact_info.is_direct_url {
             if let Some(builder) = builder {
@@ -306,7 +306,7 @@ impl PackageDb {
 
         // Otherwise just retrieve the wheel
         let cached_whl = self
-            .get_cached_artifact::<Wheel>(artifact_info, CacheMode::Default)
+            .get_cached_artifact::<ArchivedWheel>(artifact_info, CacheMode::Default)
             .await?;
         Ok((cached_whl, None))
     }
@@ -370,9 +370,12 @@ impl PackageDb {
     ) -> miette::Result<Option<(&'a A, WheelCoreMetadata)>> {
         for artifact_info in artifacts.iter() {
             let artifact_info_ref = artifact_info.borrow();
-            if artifact_info_ref.is::<Wheel>() && !artifact_info_ref.is_direct_url {
+            if artifact_info_ref.is::<ArchivedWheel>() && !artifact_info_ref.is_direct_url {
                 let result = self
-                    .get_cached_artifact::<Wheel>(artifact_info_ref, CacheMode::OnlyIfCached)
+                    .get_cached_artifact::<ArchivedWheel>(
+                        artifact_info_ref,
+                        CacheMode::OnlyIfCached,
+                    )
                     .await;
                 match result {
                     Ok(artifact) => {
@@ -432,7 +435,7 @@ impl PackageDb {
     ) -> miette::Result<Option<(&'a A, WheelCoreMetadata)>> {
         let wheels = artifacts
             .iter()
-            .filter(|artifact_info| (*artifact_info).borrow().is::<Wheel>());
+            .filter(|artifact_info| (*artifact_info).borrow().is::<ArchivedWheel>());
 
         // Get the information from the first artifact. We assume the metadata is consistent across
         // all matching artifacts
@@ -469,9 +472,9 @@ impl PackageDb {
             } else {
                 // Otherwise download the entire artifact
                 let artifact = self
-                    .get_cached_artifact::<Wheel>(ai, CacheMode::Default)
+                    .get_cached_artifact::<ArchivedWheel>(ai, CacheMode::Default)
                     .await?;
-                artifact.metadata()
+                artifact.metadata().into_diagnostic()
             };
 
             match metadata {
@@ -620,7 +623,7 @@ impl PackageDb {
         )
         .await
         {
-            match Wheel::read_metadata_bytes(name, &mut reader).await {
+            match ArchivedWheel::read_metadata_bytes(name, &mut reader).await {
                 Ok((blob, metadata)) => {
                     self.put_metadata_in_cache(artifact_info, &blob).await?;
                     return Ok(Some(metadata));

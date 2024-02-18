@@ -2,11 +2,10 @@
 //! Now just use the python venv command to create the virtual environment.
 //! Later on we can look into actually creating the environment by linking to the python library,
 //! and creating the necessary files. See: [VEnv](https://packaging.python.org/en/latest/specifications/virtual-environments/#declaring-installation-environments-as-python-virtual-environments)
-use crate::artifacts::wheel::{InstallPaths, UnpackWheelOptions, Wheel};
-use crate::artifacts::wheel::{UnpackError, UnpackedWheel};
+use crate::artifacts::wheel::ArchivedWheel;
 use crate::python_env::{
-    system_python_executable, FindPythonError, ParsePythonInterpreterVersionError,
-    PythonInterpreterVersion,
+    FindPythonError, ParsePythonInterpreterVersionError, PythonInterpreterVersion,
+    system_python_executable,
 };
 use fs_err as fs;
 use std::ffi::OsStr;
@@ -15,6 +14,7 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use thiserror::Error;
+use crate::install::{UnpackedWheel, UnpackError, UnpackWheelOptions, InstallPaths};
 
 #[cfg(unix)]
 pub fn copy_file<P: AsRef<Path>, U: AsRef<Path>>(from: P, to: U) -> std::io::Result<()> {
@@ -92,7 +92,7 @@ impl VEnv {
     /// Install a wheel into this virtual environment
     pub fn install_wheel(
         &self,
-        wheel: &Wheel,
+        wheel: &ArchivedWheel,
         options: &UnpackWheelOptions,
     ) -> Result<UnpackedWheel, UnpackError> {
         wheel.unpack(
@@ -358,7 +358,7 @@ mod tests {
         assert!(venv.python_executable().is_file());
 
         // Install wheel
-        let wheel = crate::artifacts::Wheel::from_path(
+        let wheel = crate::artifacts::ArchivedWheel::from_path(
             &Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../test-data/wheels/wordle_python-2.3.32-py3-none-any.whl"),
             &NormalizedPackageName::from_str("wordle_python").unwrap(),

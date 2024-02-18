@@ -4,7 +4,7 @@ use super::{
     PinnedPackage, PypiVersion, PypiVersionSet,
 };
 use crate::{
-    artifacts::{SDist, Wheel},
+    artifacts::{SDist, ArchivedWheel},
     index::{ArtifactRequest, PackageDb},
     python_env::WheelTags,
     types::{
@@ -109,7 +109,7 @@ impl PypiDependencyProvider {
             let wheels = artifacts
                 .iter()
                 .copied()
-                .filter(|a| (*a).borrow().is::<Wheel>())
+                .filter(|a| (*a).borrow().is::<ArchivedWheel>())
                 .collect::<Vec<_>>();
 
             if !self.options.sdist_resolution.allow_sdists() && wheels.is_empty() {
@@ -261,8 +261,8 @@ impl<'p> DependencyProvider<PypiVersionSet, PypiPackageName> for &'p PypiDepende
             // whether some of them are preferred. If one artifact type is preferred over another
             // we sort those versions above the others even if the versions themselves are lower.
             if matches!(self.options.sdist_resolution, SDistResolution::PreferWheels) {
-                let a_has_wheels = self.solvable_has_artifact_type::<Wheel>(a);
-                let b_has_wheels = self.solvable_has_artifact_type::<Wheel>(b);
+                let a_has_wheels = self.solvable_has_artifact_type::<ArchivedWheel>(a);
+                let b_has_wheels = self.solvable_has_artifact_type::<ArchivedWheel>(b);
                 match (a_has_wheels, b_has_wheels) {
                     (true, false) => return Ordering::Less,
                     (false, true) => return Ordering::Greater,
