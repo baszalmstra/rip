@@ -26,7 +26,7 @@
 //!
 //! So cacache stores the hashed wheel key and associated with this is with the content hash of the wheel
 //! This way multiple WheelCacheKeys can point to the same wheel.
-use crate::artifacts::ArchivedWheel;
+use crate::artifacts::Wheel;
 use crate::python_env::PythonInterpreterVersion;
 use crate::types::ArtifactFromSource;
 use crate::types::{ArtifactFromBytes, WheelFilename};
@@ -161,7 +161,7 @@ impl WheelCache {
     pub fn wheel_for_key(
         &self,
         wheel_key: &WheelCacheKey,
-    ) -> Result<Option<ArchivedWheel>, WheelCacheError> {
+    ) -> Result<Option<Wheel>, WheelCacheError> {
         // Find metadata for the key
         let metadata = cacache::index::find(&self.path, &wheel_key.0)?;
 
@@ -173,7 +173,7 @@ impl WheelCache {
 
             // Find wheel associated with integrity
             let bytes = Cursor::new(cacache::read_hash_sync(&self.path, &integrity)?);
-            let wheel = ArchivedWheel::from_bytes(value.wheel_filename, Box::new(bytes));
+            let wheel = Wheel::from_bytes(value.wheel_filename, Box::new(bytes));
 
             // Need to do this to get out of miette::Result
             // TODO: change artifact to not use miette::Result?

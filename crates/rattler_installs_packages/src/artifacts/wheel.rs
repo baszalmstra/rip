@@ -20,21 +20,15 @@ use std::{
 use thiserror::Error;
 use zip::{result::ZipError, ZipArchive};
 
-/// Different representations of a wheel that is stored locally on disk.
-pub enum LocalWheel {
-    /// A `.whl` file on disk.
-    ArchivedWheel(ArchivedWheel),
-}
-
 /// A wheel file (`.whl`) in its archived form that is stored somewhere on disk.
-pub struct ArchivedWheel {
+pub struct Wheel {
     /// Name of wheel
     pub name: WheelFilename,
 
     pub(crate) archive: Mutex<ZipArchive<Box<dyn ReadAndSeek + Send>>>,
 }
 
-impl HasArtifactName for ArchivedWheel {
+impl HasArtifactName for Wheel {
     type Name = WheelFilename;
 
     fn name(&self) -> &Self::Name {
@@ -42,17 +36,7 @@ impl HasArtifactName for ArchivedWheel {
     }
 }
 
-impl HasArtifactName for LocalWheel {
-    type Name = WheelFilename;
-
-    fn name(&self) -> &Self::Name {
-        match self {
-            LocalWheel::ArchivedWheel(whl) => whl.name(),
-        }
-    }
-}
-
-impl ArtifactFromBytes for ArchivedWheel {
+impl ArtifactFromBytes for Wheel {
     fn from_bytes(name: Self::Name, bytes: Box<dyn ReadAndSeek + Send>) -> miette::Result<Self> {
         Ok(Self {
             name,
@@ -61,15 +45,7 @@ impl ArtifactFromBytes for ArchivedWheel {
     }
 }
 
-impl ArtifactFromBytes for LocalWheel {
-    fn from_bytes(name: Self::Name, bytes: Box<dyn ReadAndSeek + Send>) -> miette::Result<Self> {
-        // It is assumed that when constructing a LocalWheel from bytes that the bytes refer to a
-        // zipped archive.
-        ArchivedWheel::from_bytes(name, bytes).map(LocalWheel::ArchivedWheel)
-    }
-}
-
-impl ArchivedWheel {
+impl Wheel {
     /// Open a wheel by reading a `.whl` file on disk.
     pub fn from_path(
         path: &Path,

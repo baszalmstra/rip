@@ -1,4 +1,4 @@
-use crate::artifacts::{ArchivedWheel, SDist, STree};
+use crate::artifacts::{Wheel, SDist, STree};
 use crate::index::file_store::FileStore;
 
 use crate::index::html::{parse_package_names_html, parse_project_info_html};
@@ -240,7 +240,7 @@ impl PackageDb {
         &self,
         artifact_info: &ArtifactInfo,
         builder: Option<Arc<WheelBuilder>>,
-    ) -> miette::Result<(ArchivedWheel, Option<DirectUrlJson>)> {
+    ) -> miette::Result<(Wheel, Option<DirectUrlJson>)> {
         // TODO: add support for this currently there are not saved
         if artifact_info.is_direct_url {
             if let Some(builder) = builder {
@@ -306,7 +306,7 @@ impl PackageDb {
 
         // Otherwise just retrieve the wheel
         let cached_whl = self
-            .get_cached_artifact::<ArchivedWheel>(artifact_info, CacheMode::Default)
+            .get_cached_artifact::<Wheel>(artifact_info, CacheMode::Default)
             .await?;
         Ok((cached_whl, None))
     }
@@ -370,9 +370,9 @@ impl PackageDb {
     ) -> miette::Result<Option<(&'a A, WheelCoreMetadata)>> {
         for artifact_info in artifacts.iter() {
             let artifact_info_ref = artifact_info.borrow();
-            if artifact_info_ref.is::<ArchivedWheel>() && !artifact_info_ref.is_direct_url {
+            if artifact_info_ref.is::<Wheel>() && !artifact_info_ref.is_direct_url {
                 let result = self
-                    .get_cached_artifact::<ArchivedWheel>(
+                    .get_cached_artifact::<Wheel>(
                         artifact_info_ref,
                         CacheMode::OnlyIfCached,
                     )
@@ -435,7 +435,7 @@ impl PackageDb {
     ) -> miette::Result<Option<(&'a A, WheelCoreMetadata)>> {
         let wheels = artifacts
             .iter()
-            .filter(|artifact_info| (*artifact_info).borrow().is::<ArchivedWheel>());
+            .filter(|artifact_info| (*artifact_info).borrow().is::<Wheel>());
 
         // Get the information from the first artifact. We assume the metadata is consistent across
         // all matching artifacts
@@ -472,7 +472,7 @@ impl PackageDb {
             } else {
                 // Otherwise download the entire artifact
                 let artifact = self
-                    .get_cached_artifact::<ArchivedWheel>(ai, CacheMode::Default)
+                    .get_cached_artifact::<Wheel>(ai, CacheMode::Default)
                     .await?;
                 artifact.metadata().into_diagnostic()
             };

@@ -1,5 +1,5 @@
 use super::{NormalizedPackageName, PackageName, ParsePackageNameError};
-use crate::artifacts::{SDist, STree, ArchivedWheel};
+use crate::artifacts::{SDist, STree, Wheel};
 use crate::python_env::WheelTag;
 use crate::types::Version;
 use itertools::Itertools;
@@ -555,7 +555,7 @@ impl InnerAsArtifactName for STreeFilename {
 ///    * STree (is not an official PyPa name) but represents a source code tree
 #[allow(missing_docs)]
 pub enum ArtifactType {
-    Wheel(ArchivedWheel),
+    Wheel(Wheel),
     SDist(SDist),
     STree(STree),
 }
@@ -571,7 +571,7 @@ impl ArtifactType {
     }
 
     /// Returns this artifact as wheel
-    pub fn as_wheel(self) -> Option<ArchivedWheel> {
+    pub fn as_wheel(self) -> Option<Wheel> {
         match self {
             ArtifactType::Wheel(wheel) => Some(wheel),
             ArtifactType::SDist(_) => None,

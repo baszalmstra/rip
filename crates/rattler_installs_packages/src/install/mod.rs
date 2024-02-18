@@ -2,7 +2,7 @@
 
 use crate::{
     artifacts::wheel::WheelVitalsError,
-    artifacts::ArchivedWheel,
+    artifacts::Wheel,
     python_env::{ByteCodeCompiler, CompilationError},
     types::{DirectUrlJson, EntryPoint, Extra, Record, RecordEntry},
     utils::ReadAndSeek,
@@ -77,7 +77,7 @@ impl UnpackError {
     }
 }
 
-/// Additional optional settings to pass to [`ArchivedWheel::unpack`].
+/// Additional optional settings to pass to [`Wheel::unpack`].
 ///
 /// Not all options in this struct are relevant. Typically you will default a number of fields.
 #[derive(Default)]
@@ -114,7 +114,7 @@ pub struct UnpackedWheel {
     pub dist_info: PathBuf,
 }
 
-impl ArchivedWheel {
+impl Wheel {
     /// Unpacks a wheel to the given filesystem.
     /// TODO: Write better docs.
     /// The following functionality is still missing:
@@ -884,7 +884,7 @@ mod test {
         normalized_package_name: &NormalizedPackageName,
         byte_code_compiler: Option<&ByteCodeCompiler>,
     ) -> UnpackedWheel {
-        let wheel = ArchivedWheel::from_path(path, normalized_package_name).unwrap();
+        let wheel = Wheel::from_path(path, normalized_package_name).unwrap();
         let tmpdir = tempdir().unwrap();
 
         // Construct the path lookup to install packages to
@@ -976,7 +976,7 @@ mod test {
         let package_path = test_utils::download_and_cache_file(
             "https://files.pythonhosted.org/packages/02/72/36fb2c35547fdf473629579fc35d9a2034592ea3f01710702d81ef596e16/greenlet-3.0.1-cp310-cp310-win_amd64.whl".parse().unwrap(),
             "52e93b28db27ae7d208748f45d2db8a7b6a380e0d703f099c949d0f0d80b70e9").unwrap();
-        let wheel = ArchivedWheel::from_path(&package_path, &"greenlet".parse().unwrap()).unwrap();
+        let wheel = Wheel::from_path(&package_path, &"greenlet".parse().unwrap()).unwrap();
         venv.install_wheel(&wheel, &Default::default()).unwrap();
 
         // Check to make sure that the headers directory was created
@@ -992,7 +992,7 @@ mod test {
         let package_path = test_utils::download_and_cache_file(
             "https://files.pythonhosted.org/packages/02/72/36fb2c35547fdf473629579fc35d9a2034592ea3f01710702d81ef596e16/greenlet-3.0.1-cp310-cp310-win_amd64.whl".parse().unwrap(),
             "52e93b28db27ae7d208748f45d2db8a7b6a380e0d703f099c949d0f0d80b70e9").unwrap();
-        let wheel = ArchivedWheel::from_path(&package_path, &"greenlet".parse().unwrap()).unwrap();
+        let wheel = Wheel::from_path(&package_path, &"greenlet".parse().unwrap()).unwrap();
 
         let direct_url = DirectUrlJson {
             url: Url::from_directory_path(&package_path).unwrap(),
@@ -1026,7 +1026,7 @@ mod test {
         let package_path = test_utils::download_and_cache_file(
             "https://files.pythonhosted.org/packages/29/a2/76daec910034d765f1018d22660c0970fb99f77143a42841d067b522903e/cowpy-1.1.5-py3-none-any.whl".parse().unwrap(),
             "de5ae7646dd30b4936013666c6bd019af9cf411cc3b377c8538cfd8414262921").unwrap();
-        let wheel = ArchivedWheel::from_path(&package_path, &"cowpy".parse().unwrap()).unwrap();
+        let wheel = Wheel::from_path(&package_path, &"cowpy".parse().unwrap()).unwrap();
         venv.install_wheel(&wheel, &Default::default()).unwrap();
 
         // Determine the location of the installed script
@@ -1111,7 +1111,7 @@ mod test {
 
         // Download our wheel file and install it in the virtual environment we just created
         let package_path = download_best_ruff_wheel().await;
-        let wheel = ArchivedWheel::from_path(&package_path, &"ruff".parse().unwrap()).unwrap();
+        let wheel = Wheel::from_path(&package_path, &"ruff".parse().unwrap()).unwrap();
         venv.install_wheel(&wheel, &Default::default()).unwrap();
 
         // Determine the location of the installed script
